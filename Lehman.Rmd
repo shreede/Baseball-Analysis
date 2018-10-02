@@ -9,7 +9,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## R Markdown
 
-https://courses.edx.org/courses/course-v1:HarvardX+PH125.7x+2T2018/courseware/5cbec61d404f42858be6500ee4374a7a/7847b448491f4dccb272463f6370ae32/1?activate_block_id=block-v1%3AHarvardX%2BPH125.7x%2B2T2018%2Btype%40vertical%2Bblock%4091ed4f72a91545fcbed242df8af1b9da
 
 
 ```{r}
