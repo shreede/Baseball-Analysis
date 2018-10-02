@@ -1,0 +1,490 @@
+---
+title: "Base Ball"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+https://courses.edx.org/courses/course-v1:HarvardX+PH125.7x+2T2018/courseware/5cbec61d404f42858be6500ee4374a7a/7847b448491f4dccb272463f6370ae32/1?activate_block_id=block-v1%3AHarvardX%2BPH125.7x%2B2T2018%2Btype%40vertical%2Bblock%4091ed4f72a91545fcbed242df8af1b9da
+
+
+```{r}
+library(ggplot2)
+library(dbplyr)
+```
+
+```{r}
+library(Lahman)
+data("Teams")
+head(Teams)
+colnames(Teams)
+
+```
+
+Plots of Runs per game Vs home runs per game
+
+```{r}
+require(dplyr)
+require(ggplot2)
+Teams %>%
+  filter(yearID %in% 1961:2001)%>%
+  mutate(HR_PerGame = HR/G, R_PerGame=R/G) %>%
+  ggplot(aes(HR_PerGame,R_PerGame)) +
+  geom_point(alpha = 0.5)
+```
+
+Here's a plot of runs per game versus home runs per game.
+The plot shows a very strong association--
+teams with more home runs tended to score more runs.
+
+
+Now, let's examine the relationship between stolen bases and wins.
+Here are the runs per game plotted against stolen bases per game.
+
+```{r}
+Teams %>%
+  filter(yearID %in% 1961:2001) %>%
+  mutate(StolenBasesPerGame = SB/G,RunsPerGame = R/G) %>%
+  ggplot(aes(StolenBasesPerGame,RunsPerGame))+
+  geom_point(alpha =0.5)
+```
+
+
+Here, the relationship is not as clear.
+
+
+Finally, let's examine the relationship between bases on balls and runs.
+Here are runs per game versus bases on balls per game.
+```{r}
+Teams %>%
+  filter(yearID %in% 1961:2001) %>%
+  mutate(BaseonBall_perGame = BB/G, RunsPerGame = R/G)%>%
+  ggplot(aes(BaseonBall_perGame,RunsPerGame))+
+  geom_point(alpha = 0.5)
+
+```
+
+Although the relationship is not as strong as it was for home runs,
+we do see a pretty strong relationship here.
+We know that, by definition, home runs cause runs,
+because when you hit a home run, at least one run will score.
+Now it could be that home runs also cause the bases on balls.
+If you understand the game, you will agree with me
+that that could be the case.
+So it might appear that a base on ball is causing runs, when in fact, it's
+home runs that's causing both.
+This is called confounding.
+
+```{r}
+Teams %>%
+  filter(yearID %in% 1961:2001) %>%
+  mutate(singles = (H-HR-X2B-X3B)/G,BB=BB/G,HR= HR/G) %>%
+  summarise(cor(BB,HR),cor(singles,HR),cor(BB,singles))
+```
+
+
+We see that the correlation between bases on balls and homeruns
+is quite high compared to the other two pairs.
+It turns out that pitchers, afraid of homeruns,
+will sometimes avoid throwing strikes to homerun hitters.
+As a result, homerun hitters tend to have more bases on balls.
+Thus, a team with many homeruns will also
+have more bases on balls than average, and as a result,
+it may appear that bases on balls cause runs.
+But it is actually the homeruns that caused the runs.
+In this case, we say that bases on balls are confounded with homeruns.
+But could it be that bases on balls still help?
+To find out, we somehow have to adjust for the homerun effect.
+
+To try to determine if bases on balls is still useful for creating runs,
+a first approach is to keep home runs fixed at a certain value
+and then examine the relationship between runs and bases on balls.
+As we did when we stratified fathers by rounding to the closest inch,
+here, we can stratify home runs per game to the closest 10th.
+We filtered our strata with few points.
+
+```{r}
+dat <- Teams %>% filter(yearID %in% 1961:2001) %>%
+  mutate(HR_strata = round(HR/G,1),
+         BB_per_game = BB/G,
+         R_per_game = R/G) %>%
+  filter(HR_strata >=0.4 & HR_strata <=1.2)
+```
+
+
+```{r}
+dat %>%
+  ggplot(aes(BB_per_game,R_per_game))+
+  geom_point(alpha= 0.5)+
+  geom_smooth(method = "lm")+
+   facet_wrap(~HR_strata)
+ 
+```
+
+Remember that the regression slope for predicting runs with bases on balls
+when we ignore home runs was 0.735.
+But once we stratify by home runs, these slopes are substantially reduced.
+We can actually see what the slopes are by using this code.
+We stratify by home run and then compute the slope using the formula
+that we showed you previously.
+These values are closer to the slope we obtained from singles, which is 0.449.
+
+```{r}
+dat %>%
+  group_by(HR_strata) %>%
+  summarise(slope = cor(BB_per_game,R_per_game) * sd(R_per_game)/sd(BB_per_game))
+```
+
+```{r}
+dat <- Teams %>% filter(yearID  %in% 1961:2001) %>%
+  mutate(BB_strata = round(BB/G,1),
+         HR_per_game = HR/G,
+         R_per_game = R/G) %>%
+  filter(BB_strata >= 2.8 & BB_strata <=3.9)
+
+dat %>%
+  ggplot(aes(HR_per_game,R_per_game))+
+  geom_point(alpha=0.5)+
+  geom_smooth(method="lm")+
+  facet_wrap(~BB_strata)
+  
+```
+
+
+```{r}
+dat %>%
+  group_by(BB_strata) %>%
+  summarise(slope = cor(HR_per_game,R_per_game) * sd(R_per_game)/sd(HR_per_game))
+```
+
+
+In this case, the slopes are the following.
+You can see they are all around 1.5, 1.6, 1.7.
+So they do not change that much from the original slope
+estimate, which was 1.84.
+Regardless, it seems that if we stratify by home runs,
+we have an approximately bivariate normal distribution
+
+
+
+```{r}
+dat %>% 
+  group_by(HR) %>%
+  do(fit = lm(R~BB,data = .)) 
+  
+```
+
+```{r}
+get_lse <- function(data){
+  fit <- lm(R ~ BB, data = data)
+  data.frame(term = names(fit$coefficients),
+             slope = fit$coefficients,
+             se = summary(fit)$coefficient[,2])
+}
+  dat %>%
+    group_by(HR) %>%
+    do(get_lse(.))
+
+```
+
+```{r}
+library(broom)
+dat %>% 
+  group_by(lgID) %>% 
+  do(tidy(lm(R ~ HR, data = .), conf.int = T)) %>% 
+  filter(term == "HR") 
+```
+
+```{r}
+dat %>% 
+  group_by(lgID) %>% 
+  do(glance(lm(R ~ HR, data = .)))
+```
+
+
+```{r}
+dat %>% 
+  do(tidy(lm(R ~ HR, data = .), conf.int = T)) %>% 
+  filter(term == "HR")
+```
+```{r}
+
+dat <- Teams %>% filter(yearID %in% 1961:2001) %>%
+  mutate(HR = HR/G,
+         R = R/G) %>%
+  select(lgID, HR, BB, R) 
+dat %>% 
+  group_by(lgID) %>% 
+  do(mod = lm(R ~ HR, data = .))
+```
+
+```{r}
+fit <- Teams %>%
+  filter(yearID %in% 1961:2001) %>%
+  mutate(BB = BB/G,HR = HR/G, R = R/G) %>%
+  lm(R ~ BB+HR,data = .)
+
+tidy(fit,conf.int = TRUE)
+```
+data exploration let us to this model.
+Here, the data is approximately normal.
+And conditional distributions were also normal.
+Thus, we're justified to pose a linear model like this.
+With yi, the runs per game.
+x1, walks per game.
+And x2, home runs per game.
+To we used linear model with 2 variables, 
+Here's model that fits tour multiple regression model.
+
+Now, we can use the tidy function to see the nice summary.
+When we fit the model with only one variable without the adjustment,
+the estimated slopes were 0.735 and 1.844 for bases on ball and home runs,
+respectively.
+But note that when we fit the multivariate model,
+both these slopes go down with the bases on ball effect decreasing much more.
+
+```{r}
+fit <- Teams %>%
+  filter(yearID %in% 1961:2001) %>%
+  mutate(BB = BB/G,
+         singles = (H-X2B-X3B-HR)/G,
+         doubles = X2B/G,
+         triples = X3B/G,
+         HR= HR/G,
+         R = R/G) %>%
+  lm(R~BB+singles+doubles+triples+HR, data = .)
+coefs <- tidy(fit,conf.int = TRUE)
+coefs
+        
+```
+
+
+
+```{r}
+Teams %>%
+  filter(yearID %in% 1961:2001) %>%
+  mutate(BB = BB/G,
+         singles = (H-X2B-X3B-HR)/G,
+         doubles = X2B/G,
+         triples = X3B/G,
+         HR= HR/G,
+         R = R/G) %>%
+  mutate(R_hat = predict(fit,newdata = .))
+```
+
+
+
+```{r}
+pa_per_game <- Batting %>%  filter(yearID==2002) %>%
+  group_by(teamID) %>%
+  summarize(pa_per_game = sum(AB+BB)/max(G)) %>%
+  pa_per_game %>% 
+  mean
+```
+
+
+But note that when we fit the multivariate model,
+both these slopes go down with the bases on ball effect decreasing much more.
+Now, if we want to construct a metric to pick players,
+we need to consider single, doubles, and triples as well.
+Can we build a model that predicts runs based on all these outcomes?
+Now, we're going to take somewhat of a leap of faith
+and assume that these five variables are jointly normal.
+This means that if we pick any one of them
+and hold the other for fixed, the relationship with the outcome--in this case, runs per game--is linear.
+And the slopes for this relationship do not
+depend on the other four values that were held constant.
+If this is true, if this model holds true, then a linear model for our data is the following.
+With x1, x2, x3, x4, x5 representing bases on balls per game,
+singles per game, doubles per game, triples per game, and home runs per game, respectively.
+ $ Y_{i}= \beta_{0}+\beta_{1}x_{i,1} + \beta_{2}x_{i,2} + \cdots + \beta_{5}x_{i,5}+\epsilon_{i}$
+Using lm, we can quickly find the least square errors for the parameters
+
+To see how well our metric actually predicts runs,
+we can predict the number of runs for each team in 2002
+using the function predict to make the plot.
+Note that we did not use the 2002 year to create this metric.
+We used data from years previous to 2002.
+And here is the plot.
+Our model does quite a good job, as demonstrated by the fact
+that points from the observed versus predicted plot fall
+close to the identity line.
+So instead of using batting average or just the number of home runs as a measure for picking players, we can use our fitted model to form a more informative metric that relates
+more directly to run production.
+Specifically, to define a metric for player A,
+we imagine a team made up of players just like player A
+and use our fitted a regression model to predict
+how many runs this team would produce.
+We're basically sticking in the estimated coefficients
+into the regression formula.
+However, to define a player's specific metric, we have a bit more work to do.Our challenge here is that we have derived the metrics for teams
+based on team-level summary statistics.
+For example, the home run value that is entered into the equation
+is home runs per game for the entire team.
+If you compute the home runs per game for a player, it will be much lower.
+As the total is accumulated by nine batters, not just one.
+Furthermore, if a player only plays part of the game
+and gets less opportunity than average, it's still considered a game play.
+So this means that their rates will be lower than they should be.
+For players, a rate that takes into account opportunities
+is a per-plate-appearance rate.
+To make the per-game team rate comparable to the per-plate-appearance
+player rate, we compute the average number
+of team plate appearances per game using this simple piece of code.
+Now, we're ready to use our metric.
+We're going to compute the per-plate-appearance rates for players
+available in 2002.
+But we're going to use data from 1999 2001.
+Because remember, we are picking players in 2002.
+We don't know what has happened yet.
+To avoid small sample artifacts, we're going to filter players
+with few plate interferences.
+Here is the calculation of what we want to do in one long line of code
+using tidyverse.
+So we fit our model.
+And we have player-specific metrics.
+The player-specific predicted runs computer here
+can be interpreted as a number of runs we
+would predict a team to score if this team
+was made up of just that player, if that player batted every single time.
+The distribution shows that there's y variability
+across players, as we can see here.
+To actually build the teams, we will need to know the players' salaries,
+since we have a limited budget.
+Remember, we are pretending to be the Oakland A's
+in 2002 with only a $40 million budget.
+We also need to know the players' position.
+Because we're going to need one shortstop,
+one second baseman, one third baseman, et cetera.
+For this, we're going to have to do a little bit of data wrangling
+to combine information that is contained in different tables
+
+
+```{r}
+players <- Batting %>% filter(yearID %in% 1999:2001) %>%
+  group_by(playerID) %>%
+  mutate(PA = BB+AB) %>%
+  summarize(G = sum(PA)/pa_per_game,
+            BB = sum(BB)/G,
+            singles = sum(H-X2B-X3B-HR)/G,
+            doubles = sum(X2B)/G,
+            triples = sum(X3B)/G,
+            HR = sum(HR/G),
+            AVG = sum(H)/sum(AB),
+            PA = sum(PA)) %>%
+  filter(PA>=300) %>%
+  select(-G) %>%
+  mutate(R_hat = predict(fit,newdata = .))
+
+players %>% ggplot(aes(R_hat))+
+  geom_histogram(binwidth = 0.5,color = "black")
+```
+
+
+
+```{r}
+players <- Salaries %>%
+  filter(yearID==2002) %>%
+  select(playerID,salary) %>%
+  right_join(players)
+```
+
+
+```{r}
+players <- Fielding %>% filter(yearID==2002) %>%
+  filter (!POS %in% c("OF","P")) %>%
+  group_by(playerID) %>%
+  top_n(1,G) %>%
+  filter(row_number(G)==1) %>%
+  ungroup() %>%
+  select(playerID,POS) %>%
+  right_join(players) %>%
+  filter(!is.na(POS) & !is.na(salary))
+```
+
+We start by adding the 2002 salaries for each player using this code.Next, we're going to add the defensive position.
+This is a little bit complicated, because players
+play more than one position each year.
+So here, we're going to pick the one position most played by each player using the top_n function.
+And to make sure that we only pick one position in the case of ties, we're going to take the first row if there is a tie.
+We also remove the OF position.
+Because this stands for outfielder, which
+is a generalization of three positions-- left field, center field, right field. We also remove pitchers, as they don't bat in the league that the Athletics play.
+Finally, we add their names and last names so we know who we're talking about.
+So now, we have a table with our predicted run
+statistic, some other statistic, the player's name, their position,
+and their salary.If we look at the top 10 players based on our run production statistic,
+you're going to recognize some names if you're a baseball fan. Note the very high salaries of these players in the top 10.
+
+```{r}
+players <- Master %>%
+  select(playerID,nameFirst,nameLast,debut) %>%
+  right_join(players)
+```
+
+
+```{r}
+players %>%
+  select(nameFirst,nameLast,POS,salary,R_hat) %>%
+  arrange(desc(R_hat)) %>%
+  top_n(10)
+```
+
+
+```{r}
+players %>%
+  ggplot(aes(salary,R_hat,color= POS))+
+  geom_point()+
+  scale_x_log10()
+```
+We see that players with high metrics have high salaries.
+We can see that by making a plot we do see some low-cost players with very high metrics.
+These would be great for our team.Unfortunately, these are likely young players who have not yet been able to negotiate a salary and are not going to be available in 2002.
+For example, the lowest earner on our top 10 list
+is Albert Pujols, who was a rookie in 2001.
+
+
+Here's a plot with players that debuted before 1997.
+This removes all the young players. We can now search for good deals by looking at players who produce many more runs and others with similar salaries.
+We can use this table to decide what players to pick and keep
+our total salary below the $40 million Billy Beane had to work with.
+
+
+```{r}
+players %>% filter(debut <1998) %>%
+  ggplot(aes(salary,R_hat,color = POS))+
+  geom_point()+
+  scale_x_log10()
+```
+
+
+```{r}
+library(reshape2)
+library(lpSolve)
+
+players <- players %>% filter(debut <= 1997 & debut > 1988)
+constraint_matrix <- acast(players, POS ~ playerID, fun.aggregate = length)
+npos <- nrow(constraint_matrix)
+constraint_matrix <- rbind(constraint_matrix, salary = players$salary)
+constraint_dir <- c(rep("==", npos), "<=")
+constraint_limit <- c(rep(1, npos), 50*10^6)
+lp_solution <- lp("max", players$R_hat,
+                  constraint_matrix, constraint_dir, constraint_limit,
+                  all.int = TRUE) 
+
+
+```
+This algorithm chooses these players:
+```{r}
+our_team <- players %>%
+  filter(lp_solution$solution == 1) %>%
+  arrange(desc(R_hat))
+our_team %>% select(nameFirst, nameLast, POS, salary, R_hat)
+
+
+```
+
